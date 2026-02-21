@@ -1,26 +1,17 @@
-import csv from "csv-parser";
-import { createObjectCsvWriter } from "csv-writer";
-import fs from "fs";
 import dotenv from "dotenv";
 import { exit } from "process";
-import { updateChannelActivity } from "./db.js";
+import {
+  updateChannelActivity,
+  getChannelActivity,
+  closeDb,
+  saveVideos,
+} from "./db.js";
 dotenv.config();
 
 const API_KEY = process.env.API_KEY;
 
-async function loadAllChannels() {
-  try {
-    return new Promise((resolve, reject) => {
-      const channels = [];
-      fs.createReadStream("./csv/channels_with_ids.csv")
-        .pipe(csv())
-        .on("data", (data) => channels.push(data))
-        .on("end", () => resolve(channels))
-        .on("error", (error) => reject(error));
-    });
-  } catch (error) {
-    console.error(error);
-  }
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function searchLatestVideos(channelId, publishedAfter) {
@@ -86,80 +77,69 @@ function normalizedVideos(videosDetails, channelId) {
 }
 
 async function fetchNewVideosForChannels(channel) {
-  const publishedAfter = "2026-01-25T06:00:00.000Z";
+  const publishedAfter = channel.last_publish_at;
   const videoIds = await searchLatestVideos(channel.channel_id, publishedAfter);
   if (videoIds.length === 0) return [];
-  // const videosDetails = await fetchVideoDetails([
-  //   "iCSg_ul3G2w",
-  //   "zPAY2VxfFBk",
-  //   "Qr4anBkL2_A",
-  //   "LXmNeVLM4e4",
-  //   "vZdbbN3FCzE",
-  // ]);
-
-  // Read JSON file and pass to normalizedVideos
-  const videoDetailsJson = await fs.promises.readFile(
-    "video-details.json",
-    "utf-8",
-  );
-  const videosDetails = JSON.parse(videoDetailsJson);
-  // const videosDetails = await fetchVideoDetails(videoIds);
-  return normalizedVideos(videosDetails, channel.channel_id);
+  const videoDetails = await fetchVideoDetails(videoIds);
+  return normalizedVideos(videoDetails, channel.channel_id);
 }
 
-function createSaveVideoWriter() {
-  const fileExist = fs.existsSync("./csv/videos-list.csv");
-  const saveVideoWriter = createObjectCsvWriter({
-    path: "./csv/videos-list.csv",
-    header: [
-      {
-        id: "video_id",
-        title: "video_id",
-      },
-      {
-        id: "channel_id",
-        title: "channel_id",
-      },
-      {
-        id: "title",
-        title: "title",
-      },
-      {
-        id: "published_at",
-        title: "published_at",
-      },
-      {
-        id: "is_short",
-        title: "is_short",
-      },
-    ],
-    append: fileExist,
-  });
-  return saveVideoWriter;
-}
+// function createSaveVideoWriter() {
+//   const fileExist = fs.existsSync("./csv/videos-list.csv");
+//   const saveVideoWriter = createObjectCsvWriter({
+//     path: "./csv/videos-list.csv",
+//     header: [
+//       {
+//         id: "video_id",
+//         title: "video_id",
+//       },
+//       {
+//         id: "channel_id",
+//         title: "channel_id",
+//       },
+//       {
+//         id: "title",
+//         title: "title",
+//       },
+//       {
+//         id: "published_at",
+//         title: "published_at",
+//       },
+//       {
+//         id: "is_short",
+//         title: "is_short",
+//       },
+//     ],
+//     append: fileExist,
+//   });
+//   return saveVideoWriter;
+// }
 
-async function saveVideos(videos) {
-  const createWriter = createSaveVideoWriter();
-  await createWriter.writeRecords(videos);
-}
+// async function saveVideos(videos) {
+//   const createWriter = createSaveVideoWriter();
+//   await createWriter.writeRecords(videos);
+// }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+function main() {
+  (async function () {
+    const channels = await getChannelActivity();
 
-(async function () {
-  const channels = await loadAllChannels();
-
-  for (const channel of channels) {
-    try {
-      const videos = await fetchNewVideosForChannels(channel);
-      if (videos.length > 0) {
-        await saveVideos(videos);
-        await updateChannelActivity(videos);
+    for (const channel of channels) {
+      try {
+        const videos = await fetchNewVideosForChannels(channel);
+        if (videos.length > 0) {
+          await saveVideos(videos);
+          await updateChannelActivity(videos);
+        }
+        await sleep(1000);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        closeDb();
+        exit(0);
       }
-      sleep(1000);
-    } catch (error) {
-      console.error(error);
     }
-  }
-})();
+  })();
+}
+
+await main();
