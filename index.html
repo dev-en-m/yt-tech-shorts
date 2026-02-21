@@ -1,18 +1,382 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
-  </head>
-  <body>
-    <iframe
-      src="https://www.youtube.com/embed/LXmNeVLM4e4"
-      width="360"
-      height="640"
-      frameborder="0"
-      allowfullscreen
-    >
-    </iframe>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Yt-Shorts</title>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #app {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    #track {
+      position: absolute;
+      inset: 0;
+      transition: transform .38s cubic-bezier(0.77, 0, 0.175, 1);
+      will-change: transform;
+    }
+
+    .slide {
+      position: relative;
+      width: 100%;
+      height: 100dvh;
+      background: #000;
+      overflow: hidden;
+    }
+
+    /* Fullscreen cover video */
+    .yt-wrap {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 177.78vh;
+      min-width: 100%;
+      height: 100%;
+      min-height: 56.25vw;
+      pointer-events: none;
+    }
+
+    .yt-wrap iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* Gradients for readability */
+    .slide::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 35%;
+      background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
+      z-index: 5;
+    }
+
+    .slide::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 18%;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.45), transparent);
+      z-index: 5;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      touch-action: none;
+      cursor: pointer;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      position: absolute;
+      right: 10px;
+      bottom: 90px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      pointer-events: all;
+    }
+
+    .sidebar-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: #fff;
+    }
+
+    .icon {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.18);
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .icon svg {
+      width: 22px;
+      height: 22px;
+      fill: #fff;
+    }
+
+    .sidebar-btn span {
+      font-size: 11px;
+      opacity: 0.6;
+    }
+
+    /* Bottom title only */
+    .info {
+      position: absolute;
+      bottom: 22px;
+      left: 14px;
+      right: 72px;
+      z-index: 20;
+    }
+
+    .video-title {
+      font-size: 13px;
+      color: rgba(255,255,255,0.9);
+      line-height: 1.4;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    }
+
+    /* Play/Pause flash */
+    #flash {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.6);
+      z-index: 40;
+      opacity: 0;
+      pointer-events: none;
+      transition: transform .15s ease, opacity .15s ease;
+    }
+
+    #flash.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    #flash svg {
+      width: 72px;
+      height: 72px;
+      fill: rgba(255,255,255,0.9);
+      filter: drop-shadow(0 4px 18px rgba(0,0,0,0.6));
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="flash">
+  <svg id="flash-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+</div>
+
+<div id="app">
+  <div id="track"></div>
+</div>
+
+<script>
+  /* IDs only */
+  const videoIds = [
+    "LXmNeVLM4e4",
+    "HgXu-4ITMdQ",
+    "WA4PM81-uR0",
+    "kGynnbypNso",
+    "b9qR8iXTB88",
+    "5hESwPAf4yA"
+  ];
+
+  let current = 0;
+  let players = [];
+  let navLock = false;
+
+  const track = document.getElementById("track");
+  const flash = document.getElementById("flash");
+  const flashIcon = document.getElementById("flash-icon");
+
+  /* ── YouTube API ── */
+  let ytReady = false, pending = false;
+  window.onYouTubeIframeAPIReady = () => {
+    ytReady = true;
+    if (pending) init();
+  };
+
+  function init() {
+    pending = false;
+    track.innerHTML = "";
+    players = [];
+
+    videoIds.forEach((id, i) => {
+      const slide = document.createElement("div");
+      slide.className = "slide";
+
+      const wrap = document.createElement("div");
+      wrap.className = "yt-wrap";
+      wrap.id = "yt-" + i;
+
+      const info = document.createElement("div");
+      info.className = "info";
+      info.innerHTML = `<div class="video-title"></div>`;
+
+      const sidebar = document.createElement("div");
+      sidebar.className = "sidebar";
+      sidebar.innerHTML = `
+        <div class="sidebar-btn">
+          <div class="icon">
+            <svg viewBox="0 0 24 24"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.3l.9-4.6.1-.3c0-.4-.2-.8-.5-1.1L14 1 7.6 7.6c-.4.4-.6.9-.6 1.4v10c0 1.1.9 2 2 2h9c.8 0 1.5-.5 1.8-1.2l3-7c.1-.2.2-.5.2-.7v-2z"/></svg>
+          </div>
+          <span>Like</span>
+        </div>
+        <div class="sidebar-btn">
+          <div class="icon">
+            <svg viewBox="0 0 24 24"><path d="M18 16.1c-.8 0-1.4.3-2 .8l-7.1-4.2c.1-.2.1-.4.1-.7s0-.5-.1-.7l7.1-4.1c.6.5 1.3.8 2 .8 1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3c0 .2 0 .5.1.7L8 9.8c-.6-.5-1.3-.8-2-.8-1.7 0-3 1.3-3 3s1.3 3 3 3c.7 0 1.4-.3 2-.8l7.1 4.2c-.1.2-.1.4-.1.7 0 1.6 1.3 3 3 3s3-1.4 3-3-1.3-3-3-3z"/></svg>
+          </div>
+          <span>Share</span>
+        </div>
+      `;
+
+      sidebar.addEventListener("touchend", e => e.stopPropagation());
+      sidebar.addEventListener("click", e => e.stopPropagation());
+
+      const overlay = document.createElement("div");
+      overlay.className = "overlay";
+
+      slide.appendChild(wrap);
+      slide.appendChild(info);
+      slide.appendChild(sidebar);
+      slide.appendChild(overlay);
+      track.appendChild(slide);
+    });
+
+    createPlayer(0, true);
+    if (videoIds[1]) createPlayer(1, false);
+  }
+
+  function createPlayer(i, autoplay) {
+    if (players[i]) return;
+
+    players[i] = new YT.Player("yt-" + i, {
+      videoId: videoIds[i],
+      playerVars: {
+        autoplay: autoplay ? 1 : 0,
+        mute: 0,                 // 🔥 UNMUTED by default
+        controls: 1,             // safer for policy
+        playsinline: 1,
+        rel: 0,
+        modestbranding: 1,
+        iv_load_policy: 3,
+        disablekb: 1,
+        origin: window.location.origin
+      },
+      events: {
+        onReady: e => {
+          if (i === current && autoplay) e.target.playVideo();
+        },
+        onStateChange: e => {
+          if (i !== current) return;
+          if (e.data === YT.PlayerState.ENDED) safeGo(current + 1);
+          if (e.data === YT.PlayerState.PLAYING && videoIds[i + 1]) {
+            createPlayer(i + 1, false);
+          }
+        }
+      }
+    });
+  }
+
+  function slideHeight() {
+    const s = track.querySelector(".slide");
+    return s ? s.getBoundingClientRect().height : window.innerHeight;
+  }
+
+  function goTo(i) {
+    if (i < 0 || i >= videoIds.length || i === current) return;
+    players[current]?.pauseVideo?.();
+    current = i;
+    track.style.transform = `translateY(${-current * slideHeight()}px)`;
+    players[current]?.seekTo?.(0);
+    players[current]?.playVideo?.();
+  }
+
+  function safeGo(i) {
+    if (navLock) return;
+    navLock = true;
+    goTo(i);
+    setTimeout(() => navLock = false, 420);
+  }
+
+  function togglePlay() {
+    const p = players[current];
+    if (!p?.getPlayerState) return;
+    const s = p.getPlayerState();
+    if (s === YT.PlayerState.PLAYING) {
+      p.pauseVideo();
+      showFlash(false);
+    } else {
+      p.playVideo();
+      showFlash(true);
+    }
+  }
+
+  function showFlash(playing) {
+    flashIcon.innerHTML = playing
+      ? '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'
+      : '<path d="M8 5v14l11-7z"/>';
+    flash.classList.add("show");
+    setTimeout(() => flash.classList.remove("show"), 600);
+  }
+
+  /* Gestures */
+  (function () {
+    const app = document.getElementById("app");
+    let sy = 0, sx = 0, t0 = 0, suppress = false;
+
+    app.addEventListener("touchstart", e => {
+      sy = e.touches[0].clientY;
+      sx = e.touches[0].clientX;
+      t0 = Date.now();
+      suppress = false;
+    }, { passive: true });
+
+    app.addEventListener("touchend", e => {
+      const dy = e.changedTouches[0].clientY - sy;
+      const dx = e.changedTouches[0].clientX - sx;
+      if (Math.abs(dx) > Math.abs(dy)) return;
+      const fast = Date.now() - t0 < 300;
+      if (Math.abs(dy) > (fast ? 35 : 70)) {
+        suppress = true;
+        dy < 0 ? safeGo(current + 1) : safeGo(current - 1);
+      } else {
+        suppress = true;
+        togglePlay();
+      }
+    });
+
+    app.addEventListener("click", () => {
+      if (suppress) { suppress = false; return; }
+      togglePlay();
+    });
+  })();
+
+  /* Wheel */
+  let wheelLock = 0;
+  document.addEventListener("wheel", e => {
+    e.preventDefault();
+    const now = Date.now();
+    if (now - wheelLock < 500) return;
+    wheelLock = now;
+    e.deltaY > 0 ? safeGo(current + 1) : safeGo(current - 1);
+  }, { passive: false });
+
+  /* Boot */
+  if (ytReady) init();
+  else pending = true;
+</script>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+</body>
 </html>
