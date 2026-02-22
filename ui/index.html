@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Yt-Shorts</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <div id="flash">
+      <svg id="flash-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+    </div>
+
+    <div id="app">
+      <div id="track"></div>
+    </div>
+
+    <!-- Load YouTube API first, then app -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script type="module" src="index.js"></script>
+  </body>
+</html>
