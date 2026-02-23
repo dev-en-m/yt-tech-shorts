@@ -26,6 +26,37 @@ db.prepare(
 `,
 ).run();
 
+export async function getVideos(after, limit) {
+  let rows = [];
+  if (after) {
+    rows = db
+      .prepare(
+        `
+      SELECT video_id
+      FROM videos
+      WHERE published_at < (
+        SELECT published_at FROM videos WHERE video_id = ? AND is_short=1
+      )
+      ORDER BY published_at DESC
+      LIMIT ?
+    `,
+      )
+      .all(after, limit);
+  } else {
+    rows = db
+      .prepare(
+        `
+      SELECT video_id
+      FROM videos WHERE is_short=1
+      ORDER BY published_at DESC
+      LIMIT ?
+    `,
+      )
+      .all(limit);
+  }
+  return rows;
+}
+
 async function getNewVideos() {
   return new Promise((resolve, reject) => {
     const results = [];

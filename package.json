@@ -23,6 +23,9 @@
     "nodemon": "^3.1.13"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.2"
+    "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "vscroll": "^1.8.3"
   }
 }

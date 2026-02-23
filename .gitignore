@@ -3,3 +3,5 @@ node_modules
 package-lock.json
 app.db
 video-details.json
+/api/test.rest
+.DS_STORE
