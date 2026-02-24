@@ -4,19 +4,20 @@ import {
   updateChannelActivity,
   getChannelActivity,
   closeDb,
-  saveVideos,
+  saveYTVideos,
 } from "./db.js";
+import { sleep } from "./utils.js";
+import cron from "node-cron";
+
 dotenv.config();
 
-const API_KEY = process.env.API_KEY;
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const API_KEY = process.env.GOOGLE_API_KEY;
+const API_SEARCH_URL = process.env.GOOGLE_YT_SEARCH_URL;
+const API_VIDEOS_URL = process.env.GOOGLE_YT_VIDEOS_URL;
 
 async function searchLatestVideos(channelId, publishedAfter) {
   const url =
-    `https://www.googleapis.com/youtube/v3/search` +
+    `${API_SEARCH_URL}` +
     `?part=id` +
     `&channelId=${channelId}` +
     `&order=date` +
@@ -39,7 +40,7 @@ async function searchLatestVideos(channelId, publishedAfter) {
 
 async function fetchVideoDetails(videoIds) {
   const url =
-    `https://www.googleapis.com/youtube/v3/videos` +
+    `${API_VIDEOS_URL}` +
     `?part=snippet,contentDetails` +
     `&id=${videoIds.join(",")}` +
     `&key=${API_KEY}`;
@@ -66,80 +67,58 @@ function isShort(duration) {
 }
 
 function normalizedVideos(videosDetails, channelId) {
-  return videosDetails?.map((v) => ({
-    video_id: v.id,
+  return videosDetails?.map((video) => ({
+    video_id: video.id,
     channel_id: channelId,
-    title: v.snippet.title,
-    published_at: v.snippet.publishedAt,
-    duration: v.contentDetails.duration,
-    is_short: isShort(v.contentDetails.duration),
+    title: video.snippet.title,
+    published_at: video.snippet.publishedAt,
+    duration: video.contentDetails.duration,
+    is_short: isShort(video.contentDetails.duration),
   }));
 }
 
-async function fetchNewVideosForChannels(channel) {
-  const publishedAfter = channel.last_publish_at;
-  const videoIds = await searchLatestVideos(channel.channel_id, publishedAfter);
+function getLastPublishedAt(channel, days = 15) {
+  const now = new Date();
+  const past = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const lastPublishedAt =
+    channel.last_publish_at && channel.last_publish_at.trim() !== ""
+      ? channel.last_publish_at
+      : past.toISOString();
+  return lastPublishedAt;
+}
+
+async function fetchNewVideosForChannel(channel) {
+  const lastPublishedAt = getLastPublishedAt(channel);
+  const videoIds = await searchLatestVideos(
+    channel.channel_id,
+    lastPublishedAt,
+  );
   if (videoIds.length === 0) return [];
   const videoDetails = await fetchVideoDetails(videoIds);
   return normalizedVideos(videoDetails, channel.channel_id);
 }
 
-// function createSaveVideoWriter() {
-//   const fileExist = fs.existsSync("./csv/videos-list.csv");
-//   const saveVideoWriter = createObjectCsvWriter({
-//     path: "./csv/videos-list.csv",
-//     header: [
-//       {
-//         id: "video_id",
-//         title: "video_id",
-//       },
-//       {
-//         id: "channel_id",
-//         title: "channel_id",
-//       },
-//       {
-//         id: "title",
-//         title: "title",
-//       },
-//       {
-//         id: "published_at",
-//         title: "published_at",
-//       },
-//       {
-//         id: "is_short",
-//         title: "is_short",
-//       },
-//     ],
-//     append: fileExist,
-//   });
-//   return saveVideoWriter;
-// }
-
-// async function saveVideos(videos) {
-//   const createWriter = createSaveVideoWriter();
-//   await createWriter.writeRecords(videos);
-// }
-
 function main() {
-  (async function () {
+  (async () => {
     const channels = await getChannelActivity();
-
-    for (const channel of channels) {
+    for (let i = 0; i < channels.length; i++) {
       try {
-        const videos = await fetchNewVideosForChannels(channel);
+        const videos = await fetchNewVideosForChannel(channels[i]);
+        console.log(
+          `[${i + 1}/${channels.length}] found ${videos.length} videos for channel: ${channels[i].channel_id}`,
+        );
         if (videos.length > 0) {
-          await saveVideos(videos);
+          await saveYTVideos(videos);
           await updateChannelActivity(videos);
         }
         await sleep(1000);
       } catch (error) {
         console.error(error);
-      } finally {
-        closeDb();
-        exit(0);
       }
     }
+    closeDb();
+    exit(0);
   })();
 }
 
-await main();
+cron.schedule("0 3 * * *", main);
