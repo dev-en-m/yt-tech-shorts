@@ -1,9 +1,9 @@
 {
-  "name": "youtube-shorts",
+  "name": "yt-shorts",
   "version": "0.1.0",
-  "description": "YouTube Shorts, but only tech",
+  "description": "YT Shorts, but only tech content",
   "keywords": [
-    "youtube-shorts",
+    "yt-shorts",
     "adhd",
     "tech",
     "coding"
@@ -12,20 +12,15 @@
   "author": "dev-en-m",
   "type": "module",
   "main": "main.js",
+  "private": "true",
+  "workspaces": [
+    "api"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "npx nodemon --delay 10 main.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
-    "csv-parser": "^3.2.0",
-    "csv-writer": "^1.6.0",
-    "dotenv": "^17.3.1",
     "nodemon": "^3.1.13"
   },
-  "dependencies": {
-    "better-sqlite3": "^12.6.2",
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "vscroll": "^1.8.3"
-  }
+  "dependencies": {}
 }
