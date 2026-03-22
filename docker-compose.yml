@@ -1,0 +1,25 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - DB_PATH=/data/app.db
+    volumes:
+      - ./app.db:/data/app.db
+    restart: unless-stopped
+
+  ui:
+    image: nginx:alpine
+    ports:
+      - "5173:80"
+    volumes:
+      - ./ui:/usr/share/nginx/html:ro
+    depends_on:
+      api:
+        condition: service_healthy

@@ -1,0 +1,4 @@
+node_modules
+*.db
+.env
+video-details.json
