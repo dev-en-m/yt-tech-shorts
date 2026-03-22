@@ -3,12 +3,13 @@ import { createReadStream } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import csv from "csv-parser";
-import { exit } from "process";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const db = new Database(join(__dirname, "..", "app.db"));
+const dbPath = process.env.DB_PATH || join(__dirname, "..", "app.db");
+const db = new Database(dbPath);
 
 // channel_activity
 db.prepare(
@@ -34,6 +35,17 @@ db.prepare(
 `,
 ).run();
 
+// Migrate: add duration column for pre-existing databases
+const cols = db.prepare(`PRAGMA table_info(videos)`).all().map(c => c.name);
+if (!cols.includes("duration")) {
+  db.prepare(`ALTER TABLE videos ADD COLUMN duration TEXT`).run();
+}
+
+// Index for pagination queries (covers both initial and cursor branches)
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_videos_short_published ON videos(is_short, published_at DESC)`,
+).run();
+
 /***
  * @return {Array}
  * ***/
@@ -45,7 +57,7 @@ export async function getChannelActivity() {
     return channelActivities;
   } catch (error) {
     console.error("getChannelActivity Error", error);
-    exit(1);
+    throw error;
   }
 }
 
@@ -99,9 +111,10 @@ export async function getYTVideos(after, limit) {
         `
       SELECT video_id
       FROM videos
-      WHERE published_at < (
-        SELECT published_at FROM videos WHERE video_id = ? AND is_short=1
-      )
+      WHERE is_short = 1
+        AND published_at < (
+          SELECT published_at FROM videos WHERE video_id = ? AND is_short=1
+        )
       ORDER BY published_at DESC
       LIMIT ?
     `,
@@ -152,6 +165,17 @@ export async function saveYTVideos(videos) {
   }
 }
 
+export function pruneOldVideos(daysToKeep = 90) {
+  const cutoff = new Date(
+    Date.now() - daysToKeep * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const result = db
+    .prepare(`DELETE FROM videos WHERE published_at < ?`)
+    .run(cutoff);
+  console.log(`Pruned ${result.changes} videos older than ${daysToKeep} days`);
+  return result.changes;
+}
+
 export function closeDb() {
   db.close();
   console.log("Database connection closed");
@@ -182,4 +206,4 @@ function storeNewChannels() {
     .on("error", (error) => console.error(error));
 }
 
-// storeNewChannels()
+storeNewChannels()

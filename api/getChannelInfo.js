@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import csv from "csv-parser";
 import { createObjectCsvWriter } from "csv-writer";
-import { sleep } from "./utils";
+import { sleep } from "./utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

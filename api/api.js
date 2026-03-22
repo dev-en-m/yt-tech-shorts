@@ -1,9 +1,14 @@
+import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
+import cron from "node-cron";
 import { getYTVideos } from "./db.js";
+import { fetchAllChannels } from "./getNewYTVideos.js";
+
+dotenv.config();
 
 const app = express();
 
@@ -14,7 +19,7 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   : ["http://localhost:3000", "http://localhost:5173"];
 
 // Security middleware
-app.use(helmet());
+app.use(helmet()); 
 
 // Compression middleware
 app.use(compression());
@@ -41,7 +46,7 @@ app.use(
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 15, 
+  max: 100,
   message: { error: "Too many requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -64,9 +69,44 @@ app.use((req, res, next) => {
   next();
 });
 
+// Video fetch state
+let lastFetchAt = null;
+let lastFetchResult = null;
+let isFetching = false;
+
+async function runFetch() {
+  if (isFetching) {
+    console.log("[Cron] Fetch already in progress, skipping");
+    return;
+  }
+  isFetching = true;
+  const start = Date.now();
+  try {
+    console.log(`[Cron] Starting video fetch at ${new Date().toISOString()}`);
+    const count = await fetchAllChannels();
+    lastFetchResult = { status: "success", videosFound: count, durationMs: Date.now() - start };
+    console.log(`[Cron] Fetch complete: ${count} videos in ${Date.now() - start}ms`);
+  } catch (error) {
+    lastFetchResult = { status: "error", error: error.message, durationMs: Date.now() - start };
+    console.error("[Cron] Fetch failed:", error);
+  } finally {
+    lastFetchAt = new Date().toISOString();
+    isFetching = false;
+  }
+}
+
 // Health check endpoint
 app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+  res.status(200).json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    fetch: {
+      lastRun: lastFetchAt,
+      lastResult: lastFetchResult,
+      inProgress: isFetching,
+      schedule: "0 3 * * * (daily 3 AM UTC)",
+    },
+  });
 });
 
 // API endpoint with error handling and input validation
@@ -89,9 +129,16 @@ app.get("/api/v1/videos", async (req, res) => {
       limit = Math.min(parsed, 50); // Cap at 50
     }
 
-    // Validate 'after' parameter (should be a valid video ID string)
-    const after =
-      afterParam && typeof afterParam === "string" ? afterParam : null;
+    // Validate 'after' parameter (YouTube video IDs are 11 chars: [a-zA-Z0-9_-])
+    let after = null;
+    if (afterParam && typeof afterParam === "string") {
+      if (!/^[a-zA-Z0-9_-]{11}$/.test(afterParam)) {
+        return res
+          .status(400)
+          .json({ error: "Invalid 'after' cursor." });
+      }
+      after = afterParam;
+    }
 
     const rows = await getYTVideos(after, limit);
 
@@ -167,5 +214,20 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 
 // Start the server
 startServer();
+
+// Schedule daily video fetch (requires Google API keys)
+const canFetch = !!(
+  process.env.GOOGLE_API_KEY &&
+  process.env.GOOGLE_YT_SEARCH_URL &&
+  process.env.GOOGLE_YT_VIDEOS_URL
+);
+
+if (canFetch) {
+  cron.schedule("0 3 * * *", runFetch);
+  setTimeout(runFetch, 5000);
+  console.log("Video fetch cron scheduled (daily 3 AM UTC)");
+} else {
+  console.log("GOOGLE_API_* env vars not set — video fetch disabled");
+}
 
 export default app;

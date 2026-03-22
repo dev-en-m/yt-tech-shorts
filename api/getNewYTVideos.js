@@ -1,13 +1,12 @@
 import dotenv from "dotenv";
-import { exit } from "process";
 import {
   updateChannelActivity,
   getChannelActivity,
   closeDb,
   saveYTVideos,
+  pruneOldVideos,
 } from "./db.js";
 import { sleep } from "./utils.js";
-import cron from "node-cron";
 
 dotenv.config();
 
@@ -29,12 +28,13 @@ async function searchLatestVideos(channelId, publishedAfter) {
     const res = await fetch(url);
     const data = await res.json();
     if (!res.ok) {
-      console.log("searchLatestVideos", data);
-      exit(1);
+      console.error("searchLatestVideos API error:", data);
+      return [];
     }
     return data.items.map((item) => item.id.videoId);
   } catch (error) {
     console.error("Error in searchLatestVideos", error);
+    return [];
   }
 }
 
@@ -48,8 +48,8 @@ async function fetchVideoDetails(videoIds) {
   const res = await fetch(url);
   const data = await res.json();
   if (!res.ok) {
-    console.error("fetchVideoDetails", data);
-    exit(1);
+    console.error("fetchVideoDetails API error:", data);
+    return [];
   }
   return data.items;
 }
@@ -93,32 +93,50 @@ async function fetchNewVideosForChannel(channel) {
     channel.channel_id,
     lastPublishedAt,
   );
-  if (videoIds.length === 0) return [];
+  if (!videoIds || videoIds.length === 0) return [];
   const videoDetails = await fetchVideoDetails(videoIds);
   return normalizedVideos(videoDetails, channel.channel_id);
 }
 
-function main() {
-  (async () => {
-    const channels = await getChannelActivity();
-    for (let i = 0; i < channels.length; i++) {
-      try {
-        const videos = await fetchNewVideosForChannel(channels[i]);
-        console.log(
-          `[${i + 1}/${channels.length}] found ${videos.length} videos for channel: ${channels[i].channel_id}`,
-        );
-        if (videos.length > 0) {
-          await saveYTVideos(videos);
-          await updateChannelActivity(videos);
-        }
-        await sleep(1000);
-      } catch (error) {
-        console.error(error);
+/**
+ * Fetch new videos from all channels. Safe to call from a shared process
+ * (does NOT close the DB connection).
+ * @returns {Promise<number>} total new videos found
+ */
+export async function fetchAllChannels() {
+  const channels = await getChannelActivity();
+  let totalVideos = 0;
+  for (let i = 0; i < channels.length; i++) {
+    try {
+      const videos = await fetchNewVideosForChannel(channels[i]);
+      console.log(
+        `[${i + 1}/${channels.length}] found ${videos.length} videos for channel: ${channels[i].channel_id}`,
+      );
+      if (videos.length > 0) {
+        await saveYTVideos(videos);
+        await updateChannelActivity(videos);
+        totalVideos += videos.length;
       }
+      await sleep(1000);
+    } catch (error) {
+      console.error(`Error fetching channel ${channels[i].channel_id}:`, error);
     }
-    closeDb();
-    exit(0);
-  })();
+  }
+  pruneOldVideos(90);
+  return totalVideos;
 }
 
-cron.schedule("0 3 * * *", main);
+// Standalone mode: `node getNewYTVideos.js`
+const isDirectRun =
+  process.argv[1] &&
+  import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/"));
+
+if (isDirectRun) {
+  fetchAllChannels()
+    .then(() => closeDb())
+    .catch((err) => {
+      console.error("Fatal:", err);
+      closeDb();
+      process.exit(1);
+    });
+}
