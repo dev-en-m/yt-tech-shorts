@@ -21,7 +21,11 @@
 
 /* ─────────────────────────────  CONSTANTS  ──────────────────────────── */
 
-const API_ENDPOINT      = "http://localhost:3000/api/v1/videos";
+const API_ENDPOINT      = (() => {
+  const el   = document.querySelector('meta[name="api-base"]');
+  const base = el?.content || window.location.origin;
+  return `${base}/api/v1/videos`;
+})();
 const API_PAGE_SIZE     = 30;
 
 /**
@@ -66,8 +70,10 @@ class FeedManager {
   #hasMore     = true;
   #isFetching  = false;
   #inflight    = null;
+  #lastError   = null;
 
-  get poolSize() { return this.#pool.length; }
+  get poolSize()  { return this.#pool.length; }
+  get lastError() { return this.#lastError; }
 
   videoIdForSeq(seq) {
     if (this.#pool.length === 0) return null;
@@ -98,6 +104,7 @@ class FeedManager {
       })
       .catch((err) => {
         console.error("[FeedManager] fetch failed:", err);
+        this.#lastError = err;
       })
       .finally(() => {
         this.#isFetching = false;
@@ -411,13 +418,26 @@ class App {
     );
 
     this.#registerInputHandlers();
-    window.addEventListener("resize", () => this.#dom.scrollToSeq(this.#currentSeq, false));
+
+    let resizeTimer;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => this.#dom.scrollToSeq(this.#currentSeq, false), 150);
+    });
+
+    document.getElementById("status-overlay")?.addEventListener("click", () => {
+      this.#showStatus("Loading...");
+      this.start();
+    });
   }
 
   async start() {
     await this.#feed.fetch();
     if (this.#feed.poolSize === 0) {
-      console.error("[App] No videos available from API.");
+      const msg = this.#feed.lastError
+        ? "Could not load videos. Tap to retry."
+        : "No videos available.";
+      this.#showStatus(msg);
       return;
     }
     if (this.#ytReady) this.#init();
@@ -429,6 +449,7 @@ class App {
   }
 
   #init() {
+    this.#hideStatus();
     clearTimeout(this.#trimTimerId);
     this.#players.reset();
     this.#dom.reset();
@@ -441,6 +462,18 @@ class App {
     this.#dom.scrollToSeq(0, false);
     this.#players.ensure(0);
     this.#players.activate(0);
+  }
+
+  #showStatus(text) {
+    const overlay = document.getElementById("status-overlay");
+    const msg     = document.getElementById("status-message");
+    if (msg) msg.textContent = text;
+    if (overlay) overlay.classList.add("visible");
+  }
+
+  #hideStatus() {
+    const overlay = document.getElementById("status-overlay");
+    if (overlay) overlay.classList.remove("visible");
   }
 
   /**
