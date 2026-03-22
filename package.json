@@ -11,7 +11,7 @@
   "license": "ISC",
   "author": "dev-en-m",
   "type": "module",
-  "main": "main.js",
+  "main": "api/api.js",
   "private": "true",
   "workspaces": [
     "api"
