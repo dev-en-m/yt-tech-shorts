@@ -22,9 +22,8 @@
 /* ─────────────────────────────  CONSTANTS  ──────────────────────────── */
 
 const API_ENDPOINT      = (() => {
-  const el   = document.querySelector('meta[name="api-base"]');
-  const base = el?.content || window.location.origin;
-  return `${base}/api/v1/videos`;
+  const el = document.querySelector('meta[name="api-endpoint"]');
+  return el?.content || `${window.location.origin}/api/v1/videos`;
 })();
 const API_PAGE_SIZE     = 30;
 

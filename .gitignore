@@ -1,7 +1,4 @@
 .env
-node_modules
-package-lock.json
+venv
 app.db
-video-details.json
-/api/test.rest
-.DS_STORE
+last_run_by_channel.json
