@@ -1,4 +1,5 @@
 import sqlite3
+import os
 from pathlib import Path
 from typing_extensions import Annotated
 
@@ -6,7 +7,9 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 
-DB_PATH = Path(__file__).resolve().parent / "app.db"
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR))
+DB_PATH = DATA_DIR / "app.db"
 
 app = FastAPI()
 app.add_middleware(

@@ -9,13 +9,13 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
+DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR))
 
 CHANNELS_CSV = ROOT_DIR / "csv" / "channels_with_ids.csv"
-DB_PATH = BASE_DIR / "app.db"
-STATE_FILE = BASE_DIR / "last_run_by_channel.json"
+DB_PATH = DATA_DIR / "app.db"
+STATE_FILE = DATA_DIR / "last_run_by_channel.json"
 
 GOOGLE_YT_SEARCH_URL = os.environ.get(
     "GOOGLE_YT_SEARCH_URL",
@@ -138,6 +138,7 @@ def main():
     if not api_key:
         raise SystemExit("GOOGLE_API_KEY is required")
 
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     channels = load_channels()
     state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
     run_started_at = datetime.now(timezone.utc).replace(microsecond=0)
